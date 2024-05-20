@@ -23,6 +23,28 @@ csv.each do |row|
   end
 end
 
+# Define the helper functions for geographical progress check
+def calculate_distance(station1, station2, latlng)
+  if latlng[station1].nil?
+    puts "Missing latlng for station: #{station1}"
+    return Float::INFINITY
+  end
+  if latlng[station2].nil?
+    puts "Missing latlng for station: #{station2}"
+    return Float::INFINITY
+  end
+  latlng[station1].distance_to(latlng[station2])
+end
+
+def progresses_towards_destination(current_station, next_station, destination, latlng)
+  return false if current_station.nil? || next_station.nil? || destination.nil?
+  return false if latlng[current_station].nil? || latlng[next_station].nil? || latlng[destination].nil?
+
+  current_to_destination = calculate_distance(current_station, destination, latlng)
+  next_to_destination = calculate_distance(next_station, destination, latlng)
+  next_to_destination < current_to_destination
+end
+
 patterns.each do |p, routes|
   answers = Set.new
   solutions = {}
@@ -34,7 +56,7 @@ patterns.each do |p, routes|
   csv = CSV.parse(stations_csv, headers: true)
   csv.each do |row|
     station_stops[row['GTFS Stop ID']] = []
-    latlng[row['GTFS Stop ID']] = Geokit::LatLng.new(row['GTFS Latitude'],row['GTFS Longitude'])
+    latlng[row['GTFS Stop ID']] = Geokit::LatLng.new(row['GTFS Latitude'], row['GTFS Longitude'])
   end
 
   routes.each do |r|
@@ -56,6 +78,8 @@ patterns.each do |p, routes|
           next if i1n == 0
           path1 = subrouting1[0..i1n]
           next_station1 = subrouting1[i1n + 1]
+          next if next_station1.nil?
+          next unless progresses_towards_destination(s1, s2, next_station1, latlng)
 
           transfers1 = [transfers[s2]].flatten.compact
           transfers1 << s2
@@ -75,12 +99,15 @@ patterns.each do |p, routes|
                   subrouting2.each_with_index do |s3, i2n|
                     next if i2n == 0
                     break if subrouting1.include?(s3) || [transfers[s3]].flatten.compact.any? { |s| path1.include?(s) }
-          
+                    next_station2 = subrouting2[i2n + 1]
+                    next if next_station2.nil?
+                    next unless progresses_towards_destination(s2, s3, next_station2, latlng)
+
                     path2 = subrouting2[0..i2n]
                     next_station2 = subrouting2[i2n + 1]
                     transfers2 = [transfers[s3]].flatten.compact
                     transfers2 << s3
-          
+
                     transfers2.each do |t2|
                       if station_stops[t2]
                         station_stops[t2].each do |r3|
@@ -91,25 +118,25 @@ patterns.each do |p, routes|
                             next if (r3_t2_index - r3_t1_index).abs <= i2n
                           end
                           i3 = routings[r3].index(t2)
-          
+
                           [routings[r3][i3..-1], routings[r3][0..i3].reverse].each do |subrouting3|
                             next if next_station2 && (subrouting3.include?(next_station2) || [transfers[next_station2]].flatten.compact.any? { |s| subrouting3.include?(s) })
                             subrouting3.each_with_index do |s4, i3n|
                               next if i3n == 0
                               break if subrouting1.include?(s4) || subrouting2.include?(s4) || [transfers[s4]].flatten.compact.any? { |s| path1.include?(s) } || [transfers[s4]].flatten.compact.any? { |s| path2.include?(s) }
-          
+                              next unless progresses_towards_destination(s3, s4, s1, latlng)
+
                               path3 = subrouting3[0..i3n]
-          
+
                               route_exists_from_begin_to_end = false
                               ([transfers[s1]].flatten.compact + [s1]).each do |ts1|
                                 ([transfers[s4]].flatten.compact + [s4]).each do |ts2|
-          
                                   if station_stops[ts2]
                                     station_stops[ts2].each do |sr|
                                       if routings[sr].include?(ts1)
                                         one_route_stops = (routings[sr].index(ts1) - routings[sr].index(ts2)).abs
-                                        currnet_route_stops = path1.size + path2.size + path3.size - 2
-                                        if one_route_stops < currnet_route_stops
+                                        current_route_stops = path1.size + path2.size + path3.size - 2
+                                        if one_route_stops < current_route_stops
                                           route_exists_from_begin_to_end = true
                                         end
                                       end
@@ -117,7 +144,7 @@ patterns.each do |p, routes|
                                   end
                                 end
                               end
-          
+
                               combo = [r1, r2, r3].map do |x|
                                 if x.start_with?("A")
                                   "A"
@@ -125,11 +152,11 @@ patterns.each do |p, routes|
                                   x
                                 end
                               end
-          
+
                               as_the_crow_flies = latlng[s1].distance_to(latlng[s4])
                               estimated_travel_distance = latlng[s1].distance_to(latlng[s2]) + latlng[s2].distance_to(latlng[t1]) + latlng[t1].distance_to(latlng[s3]) + latlng[s3].distance_to(latlng[t2]) + latlng[t2].distance_to(latlng[s4])
                               travel_distance_factor = estimated_travel_distance / as_the_crow_flies
-          
+
                               if !answers.include?(combo)
                                 # puts "#{s1} #{r1} #{s2}-#{t1} #{r2} #{s3}-#{t2} #{r3} #{as_the_crow_flies} mi vs. #{estimated_travel_distance} mi (#{travel_distance_factor})"
                                 answers << combo
@@ -143,6 +170,7 @@ patterns.each do |p, routes|
                                     destination: s4,
                                     travel_distance_factor: route_exists_from_begin_to_end ? 100 : travel_distance_factor,
                                   }
+
                                 ]
                               else
                                 solutions[combo] << {
@@ -165,7 +193,7 @@ patterns.each do |p, routes|
               end
             end
           end
-          
+
         end
       end
     end
