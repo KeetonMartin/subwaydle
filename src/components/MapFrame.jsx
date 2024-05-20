@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import mapboxgl from '!mapbox-gl'; // eslint-disable-line import/no-webpack-loader-syntax
 
-import { todaysTrip, todaysSolution } from '../utils/answerValidations';
+import { todayGameIndex, todaysTrip, todaysSolution, isWeekend, isNight, isAccessible } from '../utils/answerValidations';
 
 import stations from "../data/stations.json";
 import routes from "../data/routes.json";
@@ -19,9 +19,15 @@ const MapFrame = (props) => {
   const [lng, setLng] = useState(-73.98119);
   const [lat, setLat] = useState(40.75855);
   const [zoom, setZoom] = useState(12);
-  const solution = todaysSolution();
+  const [currentDayIndex, setCurrentDayIndex] = useState(todayGameIndex());
+  const [markedSolutions, setMarkedSolutions] = useState([]);
+  const [mapLoaded, setMapLoaded] = useState(false); // New state to track map load
 
-  const stopsGeoJson = () => {
+  const updateDayIndex = (newIndex) => {
+    setCurrentDayIndex(newIndex);
+  };
+
+  const stopsGeoJson = (solution) => {
     const stops = [
       solution.origin,
       solution.first_transfer_arrival,
@@ -88,6 +94,56 @@ const MapFrame = (props) => {
     }
   }
 
+  const displaySolution = (solution) => {
+    if (!map.current || !mapLoaded) return;
+
+    const stopsJson = stopsGeoJson(solution);
+    map.current.getSource('Stops').setData(stopsJson);
+
+    [
+      {
+        route: todaysTrip(currentDayIndex)[0],
+        begin: solution.origin,
+        end: solution.first_transfer_arrival,
+      },
+      {
+        route: todaysTrip(currentDayIndex)[1],
+        begin: solution.first_transfer_departure,
+        end: solution.second_transfer_arrival,
+      },
+      {
+        route: todaysTrip(currentDayIndex)[2],
+        begin: solution.second_transfer_departure,
+        end: solution.destination,
+      },
+    ].forEach((line, i) => {
+      const lineJson = lineGeoJson(line);
+      map.current.getSource(`line-${i}`).setData(lineJson);
+    });
+
+    const coordinates = stopsJson.features.map(feature => feature.geometry.coordinates);
+    const bounds = coordinates.reduce((bounds, coord) => {
+      return bounds.extend(coord);
+    }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+
+    if (!bounds.isEmpty()) {
+      map.current.fitBounds(bounds, {
+        padding: {
+          top: 20,
+          right: 20,
+          left: 20,
+          bottom: 150,
+        },
+        bearing: MANHATTAN_TILT,
+      });
+    }
+  };
+
+  const handleMarkAsWeird = () => {
+    const solution = todaysSolution(currentDayIndex);
+    setMarkedSolutions([...markedSolutions, solution]);
+  };
+
   useEffect(() => {
     if (map.current) return; // initialize map only once
     map.current = new mapboxgl.Map({
@@ -107,53 +163,10 @@ const MapFrame = (props) => {
     map.current.touchZoomRotate.disableRotation();
 
     map.current.on('load', () => {
-      map.current.resize();
-      const trip = todaysTrip();
-      const solution = todaysSolution();
-      let coordinates = [];
-      [
-        {
-          route: trip[0],
-          begin: solution.origin,
-          end: solution.first_transfer_arrival,
-        },
-        {
-          route: trip[1],
-          begin: solution.first_transfer_departure,
-          end: solution.second_transfer_arrival,
-        },
-        {
-          route: trip[2],
-          begin: solution.second_transfer_departure,
-          end: solution.destination,
-        },
-      ].forEach((line, i) => {
-        const lineJson = lineGeoJson(line);
-        coordinates = coordinates.concat(lineJson.geometry.coordinates);
-        const layerId = `line-${i}`;
-        map.current.addSource(layerId, {
-          "type": "geojson",
-          "data": lineJson
-        });
-        map.current.addLayer({
-          "id": layerId,
-          "type": "line",
-          "source": layerId,
-          "layout": {
-            "line-join": "miter",
-            "line-cap": "round",
-          },
-          "paint": {
-            "line-width": 2,
-            "line-color": ["get", "color"],
-          }
-        });
-      });
-      const stopsJson = stopsGeoJson();
-      map.current.addSource("Stops", {
-        "type": "geojson",
-        "data": stopsJson
-      });
+      setMapLoaded(true); // Set map loaded to true
+
+      // Initialize layers
+      map.current.addSource("Stops", { "type": "geojson", "data": stopsGeoJson(todaysSolution(currentDayIndex)) });
       map.current.addLayer({
         "id": "Stops",
         "type": "symbol",
@@ -176,25 +189,27 @@ const MapFrame = (props) => {
           "text-color": '#ffffff',
         },
       });
-      const bounds = coordinates.reduce((bounds, coord) => {
-        return bounds.extend(coord);
-      }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
 
-      if (!bounds.isEmpty()) {
-        map.current.fitBounds(bounds, {
-          padding: {
-            top: 20,
-            right: 20,
-            left: 20,
-            bottom: 150,
+      [0, 1, 2].forEach(i => {
+        map.current.addSource(`line-${i}`, { "type": "geojson", "data": { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [] } } });
+        map.current.addLayer({
+          "id": `line-${i}`,
+          "type": "line",
+          "source": `line-${i}`,
+          "layout": {
+            "line-join": "miter",
+            "line-cap": "round",
           },
-          bearing: MANHATTAN_TILT,
+          "paint": {
+            "line-width": 2,
+            "line-color": ["get", "color"],
+          }
         });
-      }
+      });
+
+      displaySolution(todaysSolution(currentDayIndex));
     });
-
-
-  });
+  }, []);
 
   useEffect(() => {
     if (!map.current) return; // wait for map to initialize
@@ -203,11 +218,24 @@ const MapFrame = (props) => {
       setLat(map.current.getCenter().lat.toFixed(4));
       setZoom(map.current.getZoom().toFixed(2));
     });
-  });
+  }, []);
+
+  useEffect(() => {
+    if (mapLoaded) {
+      displaySolution(todaysSolution(currentDayIndex));
+    }
+  }, [currentDayIndex, mapLoaded]);
 
   return (
     <div>
       <div ref={mapContainer} className="map-container" />
+      <div className="solution-controls">
+        <button onClick={() => updateDayIndex(currentDayIndex - 1)}>Previous Day</button>
+        <button onClick={() => updateDayIndex(currentDayIndex + 1)}>Next Day</button>
+      </div>
+      <div className="solution-list">
+        <button onClick={handleMarkAsWeird}>Mark Current as Weird</button>
+      </div>
     </div>
   );
 }

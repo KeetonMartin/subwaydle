@@ -142,35 +142,35 @@ const todaysRoutings = () => {
   return weekdayRoutings;
 }
 
-export const todaysTrip = () => {
-  const index = todayGameIndex();
+export const todaysTrip = (dayIndex = todayGameIndex()) => {
   if (isNight) {
-    return nightAnswers[index % nightAnswers.length];
+    return nightAnswers[dayIndex % nightAnswers.length];
   }
   if (isAccessible) {
-    return accessibleAnswers[index % accessibleAnswers.length];
+    return accessibleAnswers[dayIndex % accessibleAnswers.length];
   }
   if (isWeekend) {
-    return weekendAnswers[index % weekendAnswers.length];
+    return weekendAnswers[dayIndex % weekendAnswers.length];
   }
-  return weekdayAnswers[index % weekdayAnswers.length];
+  return weekdayAnswers[dayIndex % weekdayAnswers.length];
 }
 
 export const flattenedTodaysTrip = () => {
   return todaysTrip().join('-');
 }
 
-export const todaysSolution = () => {
+export const todaysSolution = (dayIndex = todayGameIndex()) => {
+  const trip = todaysTrip(dayIndex);
   if (isNight) {
-    return weekendSolutions[todaysTrip().join("-")];
+    return nightSolutions[trip.join("-")];
   }
   if (isAccessible) {
-    return accessibleSolutions[todaysTrip().join("-")];
+    return accessibleSolutions[trip.join("-")];
   }
   if (isWeekend) {
-    return weekendSolutions[todaysTrip().join("-")];
+    return weekendSolutions[trip.join("-")];
   }
-  return weekdaySolutions[todaysTrip().join("-")];
+  return weekdaySolutions[trip.join("-")];
 }
 
 export const isWinningGuess = (guess) => {
