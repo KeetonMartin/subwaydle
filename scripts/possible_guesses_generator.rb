@@ -34,7 +34,7 @@ patterns.each do |p, routes|
   csv = CSV.parse(stations_csv, headers: true)
   csv.each do |row|
     station_stops[row['GTFS Stop ID']] = []
-    latlng[row['GTFS Stop ID']] = Geokit::LatLng.new(row['GTFS Latitude'],row['GTFS Longitude'])
+    latlng[row['GTFS Stop ID']] = Geokit::LatLng.new(row['GTFS Latitude'], row['GTFS Longitude'])
   end
 
   routes.each do |r|
@@ -98,6 +98,14 @@ patterns.each do |p, routes|
 
                           path3 = subrouting3[0..i3n]
 
+                          # Calculate segment distances
+                          segment1_distance = latlng[s1].distance_to(latlng[s2])
+                          segment2_distance = latlng[t1].distance_to(latlng[s3])
+                          segment3_distance = latlng[t2].distance_to(latlng[s4])
+
+                          # Filter out routes with any segment short enough to be walking distance
+                          next if segment1_distance < WALKING_DISTANCE_THRESHOLD || segment2_distance < WALKING_DISTANCE_THRESHOLD || segment3_distance < WALKING_DISTANCE_THRESHOLD
+
                           route_exists_from_begin_to_end = false
                           ([transfers[s1]].flatten.compact + [s1]).each do |ts1|
                             ([transfers[s4]].flatten.compact + [s4]).each do |ts2|
@@ -113,20 +121,11 @@ patterns.each do |p, routes|
                             end
                           end
 
-                          combo = [r1, r2, r3].map do |x|
-                            if x.start_with?("A")
-                              "A"
-                            else
-                              x
-                            end
-                          end
-
                           as_the_crow_flies = latlng[s1].distance_to(latlng[s4])
                           estimated_travel_distance = latlng[s1].distance_to(latlng[s2]) + latlng[s2].distance_to(latlng[t1]) + latlng[t1].distance_to(latlng[s3]) + latlng[s3].distance_to(latlng[t2]) + latlng[t2].distance_to(latlng[s4])
-                          travel_distance_factor = estimated_travel_distance / as_the_crow_flies
+                          travel_distance_factor = route_exists_from_begin_to_end ? 100 : estimated_travel_distance / as_the_crow_flies
 
                           if !answers.include?(combo)
-                            # puts "#{s1} #{r1} #{s2}-#{t1} #{r2} #{s3}-#{t2} #{r3} #{as_the_crow_flies} mi vs. #{estimated_travel_distance} mi (#{travel_distance_factor})"
                             answers << combo
                             solutions[combo] = [
                               {
