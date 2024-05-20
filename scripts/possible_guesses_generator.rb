@@ -103,9 +103,6 @@ patterns.each do |p, routes|
                               route_exists_from_begin_to_end = false
                               ([transfers[s1]].flatten.compact + [s1]).each do |ts1|
                                 ([transfers[s4]].flatten.compact + [s4]).each do |ts2|
-                                  # Add this debugging output
-                                  puts "ts2: #{ts2}"
-                                  puts "station_stops[ts2]: #{station_stops[ts2].inspect}"
           
                                   if station_stops[ts2]
                                     station_stops[ts2].each do |sr|
