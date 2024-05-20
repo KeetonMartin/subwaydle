@@ -3,6 +3,8 @@ require "set"
 require "json"
 require "geokit"
 
+WALKING_DISTANCE_THRESHOLD = 0.5 # miles
+
 patterns = {
   "weekday" => ["1", "2", "3", "4", "5", "6", "7", "A1", "A2", "B", "C", "D", "E", "F", "G", "J", "L", "M", "N", "Q", "R", "W", "SI", "FS", "GS", "H"],
   "weekend" => ["1", "2", "3", "4", "5", "6", "7", "A1", "A2", "C", "D", "E", "F", "G", "J", "L", "M", "N", "Q", "R", "SI", "FS", "GS", "H"],
@@ -133,7 +135,7 @@ patterns.each do |p, routes|
                           segment2_distance = latlng[t1].distance_to(latlng[s3])
                           segment3_distance = latlng[t2].distance_to(latlng[s4])
 
-                          # Filter out routes with any segment short enough to be walking distance
+                          # Filter out routes with any segment short enough to be walking distance - this seems to make a small noticeable improvement
                           next if segment1_distance < WALKING_DISTANCE_THRESHOLD || segment2_distance < WALKING_DISTANCE_THRESHOLD || segment3_distance < WALKING_DISTANCE_THRESHOLD
 
                               route_exists_from_begin_to_end = false
