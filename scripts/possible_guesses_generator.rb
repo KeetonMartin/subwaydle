@@ -61,6 +61,7 @@ patterns.each do |p, routes|
           transfers1 << s2
 
           transfers1.each do |t1|
+            next unless progresses_towards_destination(s1, t1, s4, latlng)  # s4 is the final destination station
             station_stops[t1].each do |r2|
               next if r2 == r1
               if routings[r2].include?(s1)
@@ -180,4 +181,11 @@ patterns.each do |p, routes|
   file = File.open("../src/data/#{p}/solutions.json", "w")
   file.puts JSON.pretty_generate(picked_solutions)
   file.close
+end
+
+# Helper function to determine if moving from current_station to next_station is a progression towards destination
+def progresses_towards_destination(current_station, next_station, destination, latlng)
+  current_to_dest_distance = latlng[current_station].distance_to(latlng[destination])
+  next_to_dest_distance = latlng[next_station].distance_to(latlng[destination])
+  next_to_dest_distance < current_to_dest_distance
 end
