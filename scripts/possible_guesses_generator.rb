@@ -128,33 +128,14 @@ patterns.each do |p, routes|
                               break if subrouting1.include?(s4) || subrouting2.include?(s4) || [transfers[s4]].flatten.compact.any? { |s| path1.include?(s) } || [transfers[s4]].flatten.compact.any? { |s| path2.include?(s) }
                               next unless progresses_towards_destination(s3, s4, s1, latlng)
 
-                          path3 = subrouting3[0..i3n]
+                              path3 = subrouting3[0..i3n]
 
-                          # Calculate segment distances
-                          segment1_distance = latlng[s1].distance_to(latlng[s2])
-                          segment2_distance = latlng[t1].distance_to(latlng[s3])
-                          segment3_distance = latlng[t2].distance_to(latlng[s4])
+                              # Calculate segment distances
+                              segment1_distance = latlng[s1].distance_to(latlng[s2])
+                              segment2_distance = latlng[t1].distance_to(latlng[s3])
+                              segment3_distance = latlng[t2].distance_to(latlng[s4])
 
-                          # Filter out routes with any segment short enough to be walking distance - this seems to make a small noticeable improvement
-                          next if segment1_distance < WALKING_DISTANCE_THRESHOLD || segment2_distance < WALKING_DISTANCE_THRESHOLD || segment3_distance < WALKING_DISTANCE_THRESHOLD
-
-                              route_exists_from_begin_to_end = false
-                              ([transfers[s1]].flatten.compact + [s1]).each do |ts1|
-                                ([transfers[s4]].flatten.compact + [s4]).each do |ts2|
-                                  if station_stops[ts2]
-                                    station_stops[ts2].each do |sr|
-                                      if routings[sr].include?(ts1)
-                                        one_route_stops = (routings[sr].index(ts1) - routings[sr].index(ts2)).abs
-                                        current_route_stops = path1.size + path2.size + path3.size - 2
-                                        if one_route_stops < current_route_stops
-                                          route_exists_from_begin_to_end = true
-                                        end
-                                      end
-                                    end
-                                  end
-                                end
-                              end
-
+                              # Save the segment distances to the solution
                               combo = [r1, r2, r3].map do |x|
                                 if x.start_with?("A")
                                   "A"
@@ -163,35 +144,28 @@ patterns.each do |p, routes|
                                 end
                               end
 
-                          as_the_crow_flies = latlng[s1].distance_to(latlng[s4])
-                          estimated_travel_distance = latlng[s1].distance_to(latlng[s2]) + latlng[s2].distance_to(latlng[t1]) + latlng[t1].distance_to(latlng[s3]) + latlng[s3].distance_to(latlng[t2]) + latlng[t2].distance_to(latlng[s4])
-                          travel_distance_factor = route_exists_from_begin_to_end ? 100 : estimated_travel_distance / as_the_crow_flies
+                              as_the_crow_flies = latlng[s1].distance_to(latlng[s4])
+                              estimated_travel_distance = latlng[s1].distance_to(latlng[s2]) + latlng[s2].distance_to(latlng[t1]) + latlng[t1].distance_to(latlng[s3]) + latlng[s3].distance_to(latlng[t2]) + latlng[t2].distance_to(latlng[s4])
+                              travel_distance_factor = route_exists_from_begin_to_end ? 100 : estimated_travel_distance / as_the_crow_flies
+
+                              solution = {
+                                origin: s1,
+                                first_transfer_arrival: s2,
+                                first_transfer_departure: t1,
+                                second_transfer_arrival: s3,
+                                second_transfer_departure: t2,
+                                destination: s4,
+                                travel_distance_factor: route_exists_from_begin_to_end ? 100 : travel_distance_factor,
+                                segment1_distance: segment1_distance,
+                                segment2_distance: segment2_distance,
+                                segment3_distance: segment3_distance,
+                              }
 
                               if !answers.include?(combo)
-                                # puts "#{s1} #{r1} #{s2}-#{t1} #{r2} #{s3}-#{t2} #{r3} #{as_the_crow_flies} mi vs. #{estimated_travel_distance} mi (#{travel_distance_factor})"
                                 answers << combo
-                                solutions[combo] = [
-                                  {
-                                    origin: s1,
-                                    first_transfer_arrival: s2,
-                                    first_transfer_departure: t1,
-                                    second_transfer_arrival: s3,
-                                    second_transfer_departure: t2,
-                                    destination: s4,
-                                    travel_distance_factor: route_exists_from_begin_to_end ? 100 : travel_distance_factor,
-                                  }
-
-                                ]
+                                solutions[combo] = [solution]
                               else
-                                solutions[combo] << {
-                                  origin: s1,
-                                  first_transfer_arrival: s2,
-                                  first_transfer_departure: t1,
-                                  second_transfer_arrival: s3,
-                                  second_transfer_departure: t2,
-                                  destination: s4,
-                                  travel_distance_factor: route_exists_from_begin_to_end ? 100 : travel_distance_factor,
-                                }
+                                solutions[combo] << solution
                               end
                             end
                           end
@@ -203,7 +177,6 @@ patterns.each do |p, routes|
               end
             end
           end
-
         end
       end
     end
@@ -217,13 +190,19 @@ patterns.each do |p, routes|
     [k.join("-"), picked]
   }.to_h
 
-  bad_solutions = picked_solutions.select { |_, v| v[:travel_distance_factor] >= 1.6 }.map { |k, _| k}.map { |k| k.split("-") }
+  # Write to solutions.json
+  file = File.open("../src/data/#{p}/solutions.json", "w")
+  file.puts JSON.pretty_generate(picked_solutions)
+  file.close
+
+  # Apply additional filtering for answers.json
+  bad_solutions = picked_solutions.select { |_, v| v[:travel_distance_factor] >= 1.6 || 
+    v[:segment1_distance] < WALKING_DISTANCE_THRESHOLD || 
+    v[:segment2_distance] < WALKING_DISTANCE_THRESHOLD || 
+    v[:segment3_distance] < WALKING_DISTANCE_THRESHOLD 
+  }.map { |k, _| k }.map { |k| k.split("-") }
 
   file = File.open("../src/data/#{p}/answers.json", "w")
   file.puts JSON.pretty_generate((answers.to_a - bad_solutions).shuffle)
-  file.close
-
-  file = File.open("../src/data/#{p}/solutions.json", "w")
-  file.puts JSON.pretty_generate(picked_solutions)
   file.close
 end
